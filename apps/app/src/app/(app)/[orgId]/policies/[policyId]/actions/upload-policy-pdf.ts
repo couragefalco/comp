@@ -1,8 +1,7 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { BUCKET_NAME, s3Client } from '@/app/s3';
-import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { db, PolicyDisplayFormat } from '@db';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -33,16 +32,12 @@ export const uploadPolicyPdfAction = authActionClient
       return { success: false, error: 'Not authorized' };
     }
 
-    if (!s3Client || !BUCKET_NAME) {
-      return { success: false, error: 'File storage is not configured.' };
-    }
-
     try {
       // Verify policy belongs to organization
       const policy = await db.policy.findUnique({
         where: { id: policyId, organizationId },
-        select: { 
-          id: true, 
+        select: {
+          id: true,
           pdfUrl: true,
           currentVersionId: true,
           pendingVersionId: true,
@@ -77,71 +72,65 @@ export const uploadPolicyPdfAction = authActionClient
         oldPdfUrl = version.pdfUrl;
 
         const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const s3Key = `${organizationId}/policies/${policyId}/v${version.version}-${Date.now()}-${sanitizedFileName}`;
+        const key = `${organizationId}/policies/${policyId}/v${version.version}-${Date.now()}-${sanitizedFileName}`;
+        const pathname = `${STORAGE_BUCKETS.ATTACHMENTS}/${key}`;
 
-        // Upload to S3
+        // Upload to storage
         const fileBuffer = Buffer.from(fileData, 'base64');
-        const putCommand = new PutObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: s3Key,
-          Body: fileBuffer,
-          ContentType: fileType,
+        await storage.upload(pathname, fileBuffer, {
+          contentType: fileType,
         });
-        await s3Client.send(putCommand);
 
         // Update version
         await db.policyVersion.update({
           where: { id: versionId },
-          data: { pdfUrl: s3Key },
+          data: { pdfUrl: key },
         });
 
         // Delete old PDF if it exists and is different
-        if (oldPdfUrl && oldPdfUrl !== s3Key) {
+        if (oldPdfUrl && oldPdfUrl !== key) {
           try {
-            await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: oldPdfUrl }));
+            await storage.delete(`${STORAGE_BUCKETS.ATTACHMENTS}/${oldPdfUrl}`);
           } catch (error) {
-            console.error('Error cleaning up old version PDF from S3:', error);
+            console.error('Error cleaning up old version PDF from storage:', error);
           }
         }
 
         revalidatePath(`/${organizationId}/policies/${policyId}`);
-        return { success: true, data: { s3Key } };
+        return { success: true, data: { s3Key: key } };
       }
 
       // Legacy: upload to policy level
       oldPdfUrl = policy.pdfUrl;
       const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const s3Key = `${organizationId}/policies/${policyId}/${Date.now()}-${sanitizedFileName}`;
+      const key = `${organizationId}/policies/${policyId}/${Date.now()}-${sanitizedFileName}`;
+      const pathname = `${STORAGE_BUCKETS.ATTACHMENTS}/${key}`;
 
       const fileBuffer = Buffer.from(fileData, 'base64');
-      const putCommand = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        Body: fileBuffer,
-        ContentType: fileType,
+      await storage.upload(pathname, fileBuffer, {
+        contentType: fileType,
       });
-      await s3Client.send(putCommand);
 
       await db.policy.update({
         where: { id: policyId, organizationId },
         data: {
-          pdfUrl: s3Key,
+          pdfUrl: key,
           displayFormat: PolicyDisplayFormat.PDF,
         },
       });
 
-      if (oldPdfUrl && oldPdfUrl !== s3Key) {
+      if (oldPdfUrl && oldPdfUrl !== key) {
         try {
-          await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: oldPdfUrl }));
+          await storage.delete(`${STORAGE_BUCKETS.ATTACHMENTS}/${oldPdfUrl}`);
         } catch (error) {
-          console.error('Error cleaning up old policy PDF from S3:', error);
+          console.error('Error cleaning up old policy PDF from storage:', error);
         }
       }
 
       revalidatePath(`/${organizationId}/policies/${policyId}`);
-      return { success: true, data: { s3Key } };
+      return { success: true, data: { s3Key: key } };
     } catch (error) {
-      console.error('Error uploading policy PDF to S3:', error);
+      console.error('Error uploading policy PDF to storage:', error);
       return { success: false, error: 'Failed to upload PDF.' };
     }
   });

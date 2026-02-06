@@ -1,9 +1,7 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '@/app/s3';
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { db } from '@db';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -47,11 +45,6 @@ export const updateTrustFaviconAction = authActionClient
       throw new Error('Favicon must be .ico, .png, or .svg format');
     }
 
-    // Check S3 client
-    if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-      throw new Error('File upload service is not available');
-    }
-
     // Convert base64 to buffer
     const fileBuffer = Buffer.from(fileData, 'base64');
 
@@ -61,20 +54,16 @@ export const updateTrustFaviconAction = authActionClient
       throw new Error('Favicon must be less than 100KB');
     }
 
-    // Generate S3 key
+    // Generate storage pathname
     const timestamp = Date.now();
     const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const key = `${organizationId}/trust/favicon/${timestamp}-${sanitizedFileName}`;
+    const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${organizationId}/trust/favicon/${timestamp}-${sanitizedFileName}`;
 
-    // Upload to S3
-    const putCommand = new PutObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: key,
-      Body: fileBuffer,
-      ContentType: fileType,
-      CacheControl: 'public, max-age=31536000, immutable', // Cache favicons for 1 year
+    // Upload to storage
+    await storage.upload(pathname, fileBuffer, {
+      contentType: fileType,
+      cacheControl: 'public, max-age=31536000, immutable', // Cache favicons for 1 year
     });
-    await s3Client.send(putCommand);
 
     // Get existing trust record
     const trust = await db.trust.findUnique({
@@ -88,15 +77,11 @@ export const updateTrustFaviconAction = authActionClient
     // Update trust with new favicon key
     await db.trust.update({
       where: { organizationId },
-      data: { favicon: key },
+      data: { favicon: pathname },
     });
 
-    // Generate signed URL for immediate display
-    const getCommand = new GetObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: key,
-    });
-    const signedUrl = await getSignedUrl(s3Client, getCommand, {
+    // Generate URL for immediate display
+    const signedUrl = await storage.getUrl(pathname, {
       expiresIn: 3600,
     });
 

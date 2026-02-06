@@ -1,4 +1,4 @@
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '@/app/s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { DeleteOrganization } from '@/components/forms/organization/delete-organization';
 import { TransferOwnership } from '@/components/forms/organization/transfer-ownership';
 import { UpdateOrganizationAdvancedMode } from '@/components/forms/organization/update-organization-advanced-mode';
@@ -6,8 +6,6 @@ import { UpdateOrganizationLogo } from '@/components/forms/organization/update-o
 import { UpdateOrganizationName } from '@/components/forms/organization/update-organization-name';
 import { UpdateOrganizationWebsite } from '@/components/forms/organization/update-organization-website';
 import { auth } from '@/utils/auth';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { db, Role } from '@db';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
@@ -38,14 +36,13 @@ export default async function OrganizationSettings({
 }
 
 async function getLogoUrl(logoKey: string | null | undefined): Promise<string | null> {
-  if (!logoKey || !s3Client || !APP_AWS_ORG_ASSETS_BUCKET) return null;
+  if (!logoKey) return null;
 
   try {
-    const command = new GetObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: logoKey,
-    });
-    return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    const logoPath = logoKey.startsWith(STORAGE_BUCKETS.ORG_ASSETS)
+      ? logoKey
+      : `${STORAGE_BUCKETS.ORG_ASSETS}/${logoKey}`;
+    return await storage.getUrl(logoPath, { expiresIn: 3600 });
   } catch {
     return null;
   }

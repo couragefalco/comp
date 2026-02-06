@@ -1,9 +1,7 @@
 import { logger } from '@/utils/logger';
-import { s3Client } from '@/utils/s3';
-import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { storage, STORAGE_BUCKETS } from '@/utils/storage';
 import { client as kv } from '@comp/kv';
 import { type NextRequest, NextResponse } from 'next/server';
-import { Readable } from 'stream';
 
 import { MAC_APPLE_SILICON_FILENAME, MAC_INTEL_FILENAME, WINDOWS_FILENAME } from './constants';
 import type { SupportedOS } from './types';
@@ -68,9 +66,9 @@ const getDownloadToken = async (token: string): Promise<DownloadTokenInfo | null
   return info ?? null;
 };
 
-const ensureBucket = (): string | null => {
-  const bucket = process.env.FLEET_AGENT_BUCKET_NAME;
-  return bucket ?? null;
+const getDownloadPathname = (os: SupportedOS): string => {
+  const target = getDownloadTarget(os);
+  return `${STORAGE_BUCKETS.FLEET_AGENTS}/${target.key}`;
 };
 
 const handleDownload = async (req: NextRequest, isHead: boolean) => {
@@ -86,47 +84,24 @@ const handleDownload = async (req: NextRequest, isHead: boolean) => {
     return new NextResponse('Invalid or expired download token', { status: 403 });
   }
 
-  const fleetBucketName = ensureBucket();
-
-  if (!fleetBucketName) {
-    logger('Device agent download misconfigured: missing bucket');
-    return new NextResponse('Server configuration error', { status: 500 });
-  }
-
   const target = getDownloadTarget(downloadInfo.os);
+  const pathname = getDownloadPathname(downloadInfo.os);
 
   try {
     if (isHead) {
-      const headCommand = new HeadObjectCommand({
-        Bucket: fleetBucketName,
-        Key: target.key,
-      });
-
-      const headResult = await s3Client.send(headCommand);
+      const metadata = await storage.head(pathname);
 
       return new NextResponse(null, {
-        headers: buildResponseHeaders(target, headResult.ContentLength ?? null),
+        headers: buildResponseHeaders(target, metadata?.size ?? null),
       });
     }
 
-    const getObjectCommand = new GetObjectCommand({
-      Bucket: fleetBucketName,
-      Key: target.key,
-    });
-
-    const s3Response = await s3Client.send(getObjectCommand);
-
-    if (!s3Response.Body) {
-      return new NextResponse('Installer file not found', { status: 404 });
-    }
+    const stream = await storage.downloadStream(pathname);
 
     await kv.del(`download:${token}`);
 
-    const s3Stream = s3Response.Body as Readable;
-    const webStream = Readable.toWeb(s3Stream) as unknown as ReadableStream;
-
-    return new NextResponse(webStream, {
-      headers: buildResponseHeaders(target, s3Response.ContentLength ?? null),
+    return new NextResponse(stream, {
+      headers: buildResponseHeaders(target, null),
     });
   } catch (error) {
     logger('Error serving device agent download', {

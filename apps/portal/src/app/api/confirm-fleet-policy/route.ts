@@ -1,7 +1,6 @@
 import { auth } from '@/app/lib/auth';
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '@/utils/s3';
+import { storage, STORAGE_BUCKETS } from '@/utils/storage';
 import { validateMemberAndOrg } from '@/app/api/download-agent/utils';
-import { DeleteObjectsCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@db';
 import { Buffer } from 'node:buffer';
 import { type NextRequest, NextResponse } from 'next/server';
@@ -47,24 +46,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid policyName' }, { status: 400 });
   }
 
-  if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-    return NextResponse.json({ error: 'File upload service is not available' }, { status: 500 });
-  }
-
   const uploads: Array<{ fileName: string; key: string }> = [];
   const cleanupPartialUploads = async () => {
     if (uploads.length === 0) return;
     try {
-      await s3Client.send(
-        new DeleteObjectsCommand({
-          Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-          Delete: {
-            Objects: uploads.map((upload) => ({ Key: upload.key })),
-          },
-        }),
-      );
+      const pathnames = uploads.map((upload) => `${STORAGE_BUCKETS.ORG_ASSETS}/${upload.key}`);
+      await storage.deleteMany(pathnames);
     } catch (error) {
-      console.error('Failed to cleanup partial policy uploads from S3', { error, policyId });
+      console.error('Failed to cleanup partial policy uploads', { error, policyId });
     }
   };
 
@@ -88,18 +77,12 @@ export async function POST(req: NextRequest) {
     const sanitized = sanitizeFileName(fileEntry.name);
     const key = `${organizationId}/fleet-policies/${policyId}/${timestamp}-${sanitized}`;
 
-    const putCommand = new PutObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: fileEntry.type,
-    });
-
     try {
-      await s3Client.send(putCommand);
+      const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${key}`;
+      await storage.upload(pathname, buffer, { contentType: fileEntry.type });
     } catch (error) {
       await cleanupPartialUploads();
-      console.error('Failed to upload policy evidence to S3', { error, policyId, fileName: fileEntry.name });
+      console.error('Failed to upload policy evidence', { error, policyId, fileName: fileEntry.name });
       return NextResponse.json({ error: 'Failed to upload files' }, { status: 500 });
     }
     uploads.push({ fileName: fileEntry.name, key });
@@ -128,16 +111,10 @@ export async function POST(req: NextRequest) {
 
       if (previousKeys.length > 0) {
         try {
-          await s3Client.send(
-            new DeleteObjectsCommand({
-              Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-              Delete: {
-                Objects: previousKeys.map((key) => ({ Key: key })),
-              },
-            }),
-          );
+          const pathnames = previousKeys.map((key) => `${STORAGE_BUCKETS.ORG_ASSETS}/${key}`);
+          await storage.deleteMany(pathnames);
         } catch (error) {
-          console.error('Failed to delete previous policy attachments from S3', {
+          console.error('Failed to delete previous policy attachments', {
             error,
             policyId: updated.fleetPolicyId,
           });

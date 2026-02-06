@@ -1,10 +1,10 @@
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { extractContentFromFile } from '@/trigger/vector-store/helpers/extract-content-from-file';
 import { vectorIndex } from '../core/client';
 import { batchUpsertEmbeddings } from '../core/upsert-embedding';
 import { chunkText } from '../utils/chunk-text';
 import { logger } from '../../logger';
 import type { ExistingEmbedding } from '../core/find-existing-embeddings';
+import { storage, STORAGE_BUCKETS } from '../../../app/storage';
 
 export type SourceType =
   | 'policy'
@@ -36,66 +36,26 @@ export interface ChunkItem {
 }
 
 /**
- * Creates an S3 client instance for Knowledge Base document processing
- */
-export function createKnowledgeBaseS3Client(): S3Client {
-  const region = process.env.APP_AWS_REGION || 'us-east-1';
-  const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error(
-      'AWS S3 credentials are missing. Please set APP_AWS_ACCESS_KEY_ID and APP_AWS_SECRET_ACCESS_KEY environment variables.',
-    );
-  }
-
-  return new S3Client({
-    region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-  });
-}
-
-/**
- * Extracts content from a Knowledge Base document stored in S3
+ * Extracts content from a Knowledge Base document stored in storage
  */
 export async function extractContentFromS3Document(
   s3Key: string,
   fileType: string,
 ): Promise<string> {
-  const knowledgeBaseBucket = process.env.APP_AWS_KNOWLEDGE_BASE_BUCKET;
+  const pathname = `${STORAGE_BUCKETS.KNOWLEDGE_BASE}/${s3Key}`;
+  const buffer = await storage.download(pathname);
 
-  if (!knowledgeBaseBucket) {
-    throw new Error(
-      'Knowledge base bucket is not configured. Please set APP_AWS_KNOWLEDGE_BASE_BUCKET environment variable.',
-    );
+  if (!buffer) {
+    throw new Error('Failed to retrieve file from storage');
   }
 
-  const s3Client = createKnowledgeBaseS3Client();
-
-  const getCommand = new GetObjectCommand({
-    Bucket: knowledgeBaseBucket,
-    Key: s3Key,
-  });
-
-  const response = await s3Client.send(getCommand);
-
-  if (!response.Body) {
-    throw new Error('Failed to retrieve file from S3');
-  }
-
-  // Convert stream to buffer
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk);
-  }
-  const buffer = Buffer.concat(chunks);
   const base64Data = buffer.toString('base64');
 
+  // Get file metadata to determine content type
+  const headResult = await storage.head(pathname);
   const detectedFileType =
-    response.ContentType || fileType || 'application/octet-stream';
+    headResult?.contentType || fileType || 'application/octet-stream';
+
   return extractContentFromFile(base64Data, detectedFileType);
 }
 

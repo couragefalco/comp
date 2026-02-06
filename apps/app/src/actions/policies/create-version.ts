@@ -5,8 +5,7 @@ import { z } from 'zod';
 import { db } from '@db';
 import type { Prisma } from '@db';
 import { authActionClient } from '../safe-action';
-import { BUCKET_NAME, s3Client } from '@/app/s3';
-import { CopyObjectCommand } from '@aws-sdk/client-s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 
 const VERSION_CREATE_RETRIES = 3;
 
@@ -20,17 +19,10 @@ async function copyPolicyVersionPdf(
   sourceKey: string,
   destinationKey: string,
 ): Promise<string | null> {
-  if (!s3Client || !BUCKET_NAME) {
-    return null;
-  }
   try {
-    await s3Client.send(
-      new CopyObjectCommand({
-        Bucket: BUCKET_NAME,
-        CopySource: `${BUCKET_NAME}/${sourceKey}`,
-        Key: destinationKey,
-      }),
-    );
+    const sourcePath = `${STORAGE_BUCKETS.ATTACHMENTS}/${sourceKey}`;
+    const destPath = `${STORAGE_BUCKETS.ATTACHMENTS}/${destinationKey}`;
+    await storage.copy(sourcePath, destPath);
     return destinationKey;
   } catch (error) {
     console.error('Error copying policy PDF:', error);

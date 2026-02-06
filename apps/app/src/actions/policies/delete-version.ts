@@ -4,25 +4,17 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@db';
 import { authActionClient } from '../safe-action';
-import { BUCKET_NAME, s3Client } from '@/app/s3';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 
 const deleteVersionSchema = z.object({
   versionId: z.string().min(1, 'Version ID is required'),
   policyId: z.string().min(1, 'Policy ID is required'),
 });
 
-async function deletePolicyVersionPdf(s3Key: string): Promise<void> {
-  if (!s3Client || !BUCKET_NAME) {
-    return;
-  }
+async function deletePolicyVersionPdf(key: string): Promise<void> {
   try {
-    await s3Client.send(
-      new DeleteObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-      }),
-    );
+    const pathname = `${STORAGE_BUCKETS.ATTACHMENTS}/${key}`;
+    await storage.delete(pathname);
   } catch (error) {
     console.error('Error deleting policy PDF:', error);
   }

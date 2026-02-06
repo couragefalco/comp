@@ -1,8 +1,6 @@
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '@/app/s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import PageWithBreadcrumb from '@/components/pages/PageWithBreadcrumb';
 import { auth } from '@/utils/auth';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { db, Role } from '@db';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
@@ -60,13 +58,12 @@ export default async function AuditorPage({ params }: { params: Promise<{ orgId:
 
   // Get signed URL for logo if it exists
   let logoUrl: string | null = null;
-  if (organization?.logo && s3Client && APP_AWS_ORG_ASSETS_BUCKET) {
+  if (organization?.logo) {
     try {
-      const command = new GetObjectCommand({
-        Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-        Key: organization.logo,
-      });
-      logoUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+      const logoPath = organization.logo.startsWith(STORAGE_BUCKETS.ORG_ASSETS)
+        ? organization.logo
+        : `${STORAGE_BUCKETS.ORG_ASSETS}/${organization.logo}`;
+      logoUrl = await storage.getUrl(logoPath, { expiresIn: 3600 });
     } catch {
       // Logo not available
     }

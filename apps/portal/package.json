@@ -2,8 +2,7 @@
   "name": "@comp/portal",
   "version": "0.1.0",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.859.0",
-    "@aws-sdk/s3-request-presigner": "^3.859.0",
+    "@comp/storage": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/client": "6.18.0",
     "@react-email/components": "^0.0.41",

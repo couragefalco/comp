@@ -1,8 +1,6 @@
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '@/app/s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { env } from '@/env.mjs';
 import { auth } from '@/utils/auth';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { db } from '@db';
 import { Prisma } from '@prisma/client';
 import { Button, PageHeader, PageLayout } from '@trycompai/design-system';
@@ -336,13 +334,12 @@ const getTrustPortal = async (orgId: string) => {
 
   // Get favicon URL if available
   let faviconUrl: string | null = null;
-  if (trustPortal?.favicon && s3Client && APP_AWS_ORG_ASSETS_BUCKET) {
+  if (trustPortal?.favicon) {
     try {
-      const command = new GetObjectCommand({
-        Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-        Key: trustPortal.favicon,
-      });
-      faviconUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+      const faviconPath = trustPortal.favicon.startsWith(STORAGE_BUCKETS.ORG_ASSETS)
+        ? trustPortal.favicon
+        : `${STORAGE_BUCKETS.ORG_ASSETS}/${trustPortal.favicon}`;
+      faviconUrl = await storage.getUrl(faviconPath, { expiresIn: 3600 });
     } catch {
       // If favicon fetch fails, continue without it
     }

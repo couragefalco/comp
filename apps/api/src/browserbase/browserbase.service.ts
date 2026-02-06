@@ -3,12 +3,7 @@ import Browserbase from '@browserbasehq/sdk';
 import { Stagehand } from '@browserbasehq/stagehand';
 import { db } from '@trycompai/db';
 import { z } from 'zod';
-import {
-  GetObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { storage, STORAGE_BUCKETS } from '../app/storage';
 
 const BROWSER_WIDTH = 1440;
 const BROWSER_HEIGHT = 900;
@@ -27,14 +22,9 @@ const isPrismaUniqueConstraintError = (error: unknown): boolean => {
 @Injectable()
 export class BrowserbaseService {
   private readonly logger = new Logger(BrowserbaseService.name);
-  private readonly s3Client: S3Client;
-  private readonly bucketName: string;
 
   constructor() {
-    this.s3Client = new S3Client({
-      region: process.env.AWS_REGION || 'us-east-1',
-    });
-    this.bucketName = process.env.APP_AWS_BUCKET_NAME || 'comp-attachments';
+    // Storage is now handled by the storage abstraction
   }
 
   private getBrowserbase() {
@@ -835,26 +825,19 @@ export class BrowserbaseService {
   ): Promise<string> {
     const buffer = Buffer.from(base64Screenshot, 'base64');
     const key = `browser-automations/${organizationId}/${automationId}/${runId}.jpg`;
+    const pathname = `${STORAGE_BUCKETS.ATTACHMENTS}/${key}`;
 
-    await this.s3Client.send(
-      new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
-        Body: buffer,
-        ContentType: 'image/jpeg',
-      }),
-    );
+    await storage.upload(pathname, buffer, {
+      contentType: 'image/jpeg',
+    });
 
-    // Return just the key - we'll generate presigned URLs when viewing
+    // Return just the key - we'll generate URLs when viewing
     return key;
   }
 
   async getPresignedUrl(key: string, expiresIn = 3600): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: this.bucketName,
-      Key: key,
-    });
-    return getSignedUrl(this.s3Client, command, { expiresIn });
+    const pathname = `${STORAGE_BUCKETS.ATTACHMENTS}/${key}`;
+    return storage.getUrl(pathname, { expiresIn });
   }
 
   async getRunWithPresignedUrl(runId: string) {

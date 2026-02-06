@@ -17,12 +17,10 @@ import { TrustEmailService } from './email.service';
 import { NdaPdfService } from './nda-pdf.service';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { PolicyPdfRendererService } from './policy-pdf-renderer.service';
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '../app/s3';
+import { storage, STORAGE_BUCKETS } from '../app/storage';
 import { Prisma, TrustFramework } from '@prisma/client';
 import archiver from 'archiver';
-import { PassThrough, Readable } from 'stream';
+import { PassThrough } from 'stream';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 
@@ -1627,12 +1625,6 @@ export class TrustAccessService {
   async getTrustDocumentUrlByAccessToken(token: string, documentId: string) {
     const grant = await this.validateAccessToken(token);
 
-    if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-      throw new InternalServerErrorException(
-        'Organization assets bucket is not configured',
-      );
-    }
-
     const document = await db.trustDocument.findFirst({
       where: {
         id: documentId,
@@ -1649,14 +1641,11 @@ export class TrustAccessService {
       throw new NotFoundException('Document not found');
     }
 
-    const getCommand = new GetObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: document.s3Key,
-      ResponseContentDisposition: `attachment; filename="${document.name.replaceAll('"', '')}"`,
-    });
-
-    const signedUrl = await getSignedUrl(s3Client, getCommand, {
+    const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${document.s3Key}`;
+    const signedUrl = await storage.getUrl(pathname, {
       expiresIn: 900,
+      download: true,
+      filename: document.name.replaceAll('"', ''),
     });
 
     return {
@@ -1667,12 +1656,6 @@ export class TrustAccessService {
 
   async downloadAllTrustDocumentsByAccessToken(token: string) {
     const grant = await this.validateAccessToken(token);
-
-    if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-      throw new InternalServerErrorException(
-        'Organization assets bucket is not configured',
-      );
-    }
 
     const organizationId = grant.accessRequest.organizationId;
     const documents = await db.trustDocument.findMany({
@@ -1697,28 +1680,17 @@ export class TrustAccessService {
 
     const archive = archiver('zip', { zlib: { level: 9 } });
     const zipStream = new PassThrough();
-    let putPromise: Promise<unknown> | undefined;
+    const chunks: Buffer[] = [];
 
     try {
-      putPromise = s3Client.send(
-        new PutObjectCommand({
-          Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-          Key: zipKey,
-          Body: zipStream,
-          ContentType: 'application/zip',
-          Metadata: {
-            organizationId,
-            grantId: grant.id,
-            kind: 'trust_documents_bundle',
-          },
-        }),
-      );
-
       archive.on('error', (err) => {
         zipStream.destroy(err);
       });
 
       archive.pipe(zipStream);
+
+      // Collect ZIP data into buffer
+      zipStream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
 
       // Track names case-insensitively to avoid collisions on case-insensitive filesystems
       // (e.g. Windows/macOS): "Report.pdf" vs "report.pdf"
@@ -1741,31 +1713,39 @@ export class TrustAccessService {
       };
 
       for (const doc of documents) {
-        const response = await s3Client.send(
-          new GetObjectCommand({
-            Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-            Key: doc.s3Key,
-          }),
-        );
+        const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${doc.s3Key}`;
+        const buffer = await storage.download(pathname);
 
-        if (!response.Body) {
+        if (!buffer) {
           throw new InternalServerErrorException(
-            `No file data received from S3 for document ${doc.id}`,
+            `No file data received from storage for document ${doc.id}`,
           );
         }
 
-        const bodyStream =
-          response.Body instanceof Readable
-            ? response.Body
-            : Readable.from(response.Body as any);
-
-        archive.append(bodyStream, { name: toSafeName(doc.name) });
+        archive.append(buffer, { name: toSafeName(doc.name) });
       }
 
       await archive.finalize();
-      await putPromise;
+
+      // Wait for all data to be collected
+      await new Promise<void>((resolve, reject) => {
+        zipStream.on('end', resolve);
+        zipStream.on('error', reject);
+      });
+
+      // Upload the ZIP buffer
+      const zipBuffer = Buffer.concat(chunks);
+      const zipPathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${zipKey}`;
+      await storage.upload(zipPathname, zipBuffer, {
+        contentType: 'application/zip',
+        metadata: {
+          organizationId,
+          grantId: grant.id,
+          kind: 'trust_documents_bundle',
+        },
+      });
     } catch (error) {
-      // Ensure the upload stream is closed, otherwise the S3 PutObject may hang/reject later.
+      // Ensure the archive is closed on error
       try {
         archive.abort();
       } catch {
@@ -1778,21 +1758,15 @@ export class TrustAccessService {
         );
       }
 
-      // Avoid unhandled rejections from an in-flight S3 put.
-      await putPromise?.catch(() => undefined);
-
       throw error;
     }
 
-    const signedUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({
-        Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-        Key: zipKey,
-        ResponseContentDisposition: `attachment; filename="additional-documents-${timestamp}.zip"`,
-      }),
-      { expiresIn: 900 },
-    );
+    const zipPathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${zipKey}`;
+    const signedUrl = await storage.getUrl(zipPathname, {
+      expiresIn: 900,
+      download: true,
+      filename: `additional-documents-${timestamp}.zip`,
+    });
 
     return {
       name: 'Additional Documents',
@@ -1834,12 +1808,6 @@ export class TrustAccessService {
     // Validate framework enum
     if (!Object.values(TrustFramework).includes(framework)) {
       throw new BadRequestException(`Invalid framework: ${framework}`);
-    }
-
-    if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-      throw new InternalServerErrorException(
-        'Organization assets bucket is not configured',
-      );
     }
 
     const record = await db.trustResource.findUnique({
@@ -1896,24 +1864,13 @@ export class TrustAccessService {
       });
     }
 
-    // Download the original PDF from S3
-    const getCommand = new GetObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: record.s3Key,
-    });
+    // Download the original PDF from storage
+    const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${record.s3Key}`;
+    const originalPdfBuffer = await storage.download(pathname);
 
-    const response = await s3Client.send(getCommand);
-    const chunks: Uint8Array[] = [];
-
-    if (!response.Body) {
-      throw new InternalServerErrorException('No file data received from S3');
+    if (!originalPdfBuffer) {
+      throw new InternalServerErrorException('No file data received from storage');
     }
-
-    for await (const chunk of response.Body as any) {
-      chunks.push(chunk);
-    }
-
-    const originalPdfBuffer = Buffer.concat(chunks);
 
     // Watermark the PDF
     const docId = `compliance-${grant.id}-${framework}-${Date.now()}`;
@@ -2435,16 +2392,13 @@ export class TrustAccessService {
       select: { favicon: true },
     });
 
-    if (!trust?.favicon || !s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
+    if (!trust?.favicon) {
       return null;
     }
 
     try {
-      const command = new GetObjectCommand({
-        Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-        Key: trust.favicon,
-      });
-      return await getSignedUrl(s3Client, command, { expiresIn: 86400 }); // 24 hours
+      const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${trust.favicon}`;
+      return await storage.getUrl(pathname, { expiresIn: 86400 }); // 24 hours
     } catch {
       return null;
     }

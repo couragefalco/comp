@@ -525,8 +525,8 @@ export async function updatePolicyInDatabase(
       throw new Error(`Policy not found: ${policyId}`);
     }
 
-    // Delete S3 files for existing versions if they have PDFs
-    // Note: We import S3 client dynamically to avoid issues with Trigger.dev runtime
+    // Delete storage files for existing versions if they have PDFs
+    // Note: We import storage dynamically to avoid issues with Trigger.dev runtime
     const pdfUrlsToDelete = policy.versions
       .map((v) => v.pdfUrl)
       .filter((url): url is string => !!url);
@@ -534,24 +534,13 @@ export async function updatePolicyInDatabase(
     if (pdfUrlsToDelete.length > 0) {
       try {
         // Dynamic import to work in Trigger.dev context
-        const { BUCKET_NAME, s3Client } = await import('@/app/s3');
-        const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+        const { storage, STORAGE_BUCKETS } = await import('@/app/storage');
 
-        if (s3Client && BUCKET_NAME) {
-          await Promise.allSettled(
-            pdfUrlsToDelete.map((pdfUrl) =>
-              s3Client.send(
-                new DeleteObjectCommand({
-                  Bucket: BUCKET_NAME,
-                  Key: pdfUrl,
-                }),
-              ),
-            ),
-          );
-        }
-      } catch (s3Error) {
-        logger.error(`Error deleting S3 files during regeneration: ${s3Error}`);
-        // Continue with regeneration even if S3 cleanup fails
+        const pathnames = pdfUrlsToDelete.map((pdfUrl) => `${STORAGE_BUCKETS.ATTACHMENTS}/${pdfUrl}`);
+        await storage.deleteMany(pathnames);
+      } catch (storageError) {
+        logger.error(`Error deleting storage files during regeneration: ${storageError}`);
+        // Continue with regeneration even if storage cleanup fails
       }
     }
 

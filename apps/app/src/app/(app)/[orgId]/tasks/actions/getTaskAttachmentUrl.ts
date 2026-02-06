@@ -1,9 +1,7 @@
 'use server';
 
-import { BUCKET_NAME, extractS3KeyFromUrl, s3Client } from '@/app/s3'; // Import shared client
+import { storage, STORAGE_BUCKETS, extractPathnameFromUrl } from '@/app/storage';
 import { auth } from '@/utils/auth';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AttachmentEntityType, db } from '@db';
 import { headers } from 'next/headers';
 import { z } from 'zod';
@@ -43,42 +41,36 @@ export const getTaskAttachmentUrl = async (input: z.infer<typeof schema>) => {
       } as const;
     }
 
-    // 2. Extract S3 key from the stored URL
-    let key: string;
+    // 2. Extract pathname from the stored URL
+    let pathname: string;
     try {
-      key = extractS3KeyFromUrl(attachment.url);
+      pathname = extractPathnameFromUrl(attachment.url);
     } catch (extractError) {
-      console.error('Error extracting S3 key for attachment:', attachmentId, extractError);
+      console.error('Error extracting pathname for attachment:', attachmentId, extractError);
       return {
         success: false,
         error: 'Could not process attachment URL',
       } as const;
     }
 
-    // 3. Generate Signed URL using shared client
+    // 3. Generate URL using storage
     try {
-      const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME!, // Use imported bucket name
-        Key: key,
-      });
-
-      const signedUrl = await getSignedUrl(s3Client, command, {
+      const signedUrl = await storage.getUrl(pathname, {
         expiresIn: 3600, // URL expires in 1 hour
       });
 
       if (!signedUrl) {
-        // This case is unlikely if getSignedUrl doesn't throw, but good to check
-        console.error('getSignedUrl returned undefined for key:', key);
+        console.error('getUrl returned undefined for pathname:', pathname);
         return {
           success: false,
-          error: 'Failed to generate signed URL',
+          error: 'Failed to generate URL',
         } as const;
       }
 
       // 4. Return Success
       return { success: true, data: { signedUrl } };
-    } catch (s3Error) {
-      console.error('S3 getSignedUrl Error:', s3Error);
+    } catch (storageError) {
+      console.error('Storage getUrl Error:', storageError);
       // Provide a generic error message to the client
       return {
         success: false,

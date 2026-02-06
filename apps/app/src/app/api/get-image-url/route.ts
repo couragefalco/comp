@@ -1,7 +1,5 @@
 import { auth } from '@/utils/auth';
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from '@/app/s3';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { db } from '@db';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -42,20 +40,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-    return NextResponse.json({ error: 'File service unavailable' }, { status: 500 });
-  }
-
   try {
-    const command = new GetObjectCommand({
-      Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-      Key: key,
-    });
-    const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${key}`;
+    const url = await storage.getUrl(pathname, { expiresIn: 3600 });
 
     return NextResponse.json({ url });
   } catch (error) {
-    console.error('Failed to generate signed URL', error);
+    console.error('Failed to generate URL', error);
     return NextResponse.json({ error: 'Failed to generate URL' }, { status: 500 });
   }
 }

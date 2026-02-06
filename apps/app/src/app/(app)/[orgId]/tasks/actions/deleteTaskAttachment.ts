@@ -1,8 +1,7 @@
 'use server';
 
-import { BUCKET_NAME, extractS3KeyFromUrl, s3Client } from '@/app/s3';
+import { storage, STORAGE_BUCKETS, extractPathnameFromUrl } from '@/app/storage';
 import { auth } from '@/utils/auth';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Attachment, AttachmentEntityType, db } from '@db';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
@@ -41,18 +40,13 @@ export const deleteTaskAttachment = async (input: z.infer<typeof schema>) => {
       } as const;
     }
 
-    // 2. Attempt to delete from S3 using shared client
-    let key: string;
+    // 2. Attempt to delete from storage
     try {
-      key = extractS3KeyFromUrl(attachmentToDelete.url);
-      const deleteCommand = new DeleteObjectCommand({
-        Bucket: BUCKET_NAME!,
-        Key: key,
-      });
-      await s3Client.send(deleteCommand);
-    } catch (s3Error: any) {
-      const errorMessage = s3Error instanceof Error ? s3Error.message : String(s3Error);
-      console.error('S3 Delete Error for attachment:', attachmentId, errorMessage);
+      const pathname = extractPathnameFromUrl(attachmentToDelete.url);
+      await storage.delete(pathname);
+    } catch (storageError: unknown) {
+      const errorMessage = storageError instanceof Error ? storageError.message : String(storageError);
+      console.error('Storage Delete Error for attachment:', attachmentId, errorMessage);
     }
 
     // 3. Delete from Database
@@ -70,7 +64,7 @@ export const deleteTaskAttachment = async (input: z.infer<typeof schema>) => {
       success: true,
       data: { deletedAttachmentId: attachmentId },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error('Error deleting attachment:', attachmentId, errorMessage);
     return {

@@ -1,10 +1,9 @@
 import { db, Prisma } from '@db';
 import {
-  s3Client,
-  APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET,
-  BUCKET_NAME,
-} from '../../app/s3';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+  storage,
+  STORAGE_BUCKETS,
+  base64ToBuffer,
+} from '../../app/storage';
 import { randomBytes } from 'crypto';
 import { MAX_FILE_SIZE_BYTES } from './constants';
 
@@ -110,7 +109,7 @@ export async function persistQuestionnaireResult(
 }
 
 /**
- * Uploads a questionnaire file to S3
+ * Uploads a questionnaire file to storage
  */
 export async function uploadQuestionnaireFile(params: {
   organizationId: string;
@@ -119,18 +118,7 @@ export async function uploadQuestionnaireFile(params: {
   fileData: string;
   source: 'internal' | 'external';
 }): Promise<{ s3Key: string; fileSize: number } | null> {
-  if (!s3Client) {
-    throw new Error('S3 client not configured for questionnaire uploads');
-  }
-
-  const bucket = APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET || BUCKET_NAME;
-  if (!bucket) {
-    throw new Error(
-      'APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET or APP_AWS_BUCKET_NAME must be configured for questionnaire uploads',
-    );
-  }
-
-  const fileBuffer = Buffer.from(params.fileData, 'base64');
+  const fileBuffer = base64ToBuffer(params.fileData);
 
   if (fileBuffer.length > MAX_FILE_SIZE_BYTES) {
     throw new Error(
@@ -141,24 +129,19 @@ export async function uploadQuestionnaireFile(params: {
   const fileId = randomBytes(16).toString('hex');
   const sanitizedFileName = params.fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
   const timestamp = Date.now();
-  const s3Key = `${params.organizationId}/questionnaire-uploads/${timestamp}-${fileId}-${sanitizedFileName}`;
+  const storageKey = `${STORAGE_BUCKETS.QUESTIONNAIRES}/${params.organizationId}/${timestamp}-${fileId}-${sanitizedFileName}`;
 
-  const putCommand = new PutObjectCommand({
-    Bucket: bucket,
-    Key: s3Key,
-    Body: fileBuffer,
-    ContentType: params.fileType,
-    Metadata: {
+  await storage.upload(storageKey, fileBuffer, {
+    contentType: params.fileType,
+    metadata: {
       originalFileName: params.fileName,
       organizationId: params.organizationId,
       source: params.source,
     },
   });
 
-  await s3Client.send(putCommand);
-
   return {
-    s3Key,
+    s3Key: storageKey,
     fileSize: fileBuffer.length,
   };
 }

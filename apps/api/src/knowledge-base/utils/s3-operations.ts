@@ -1,11 +1,9 @@
-import {
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomBytes } from 'crypto';
-import { s3Client, APP_AWS_KNOWLEDGE_BASE_BUCKET } from '@/app/s3';
+import {
+  storage,
+  STORAGE_BUCKETS,
+  base64ToBuffer,
+} from '../../app/storage';
 import {
   MAX_FILE_SIZE_BYTES,
   SIGNED_URL_EXPIRATION_SECONDS,
@@ -24,22 +22,15 @@ export interface SignedUrlResult {
 }
 
 /**
- * Validates that S3 is configured
+ * Validates that storage is configured
  */
 export function validateS3Config(): void {
-  if (!s3Client) {
-    throw new Error('S3 client not configured');
-  }
-
-  if (!APP_AWS_KNOWLEDGE_BASE_BUCKET) {
-    throw new Error(
-      'Knowledge base bucket is not configured. Please set APP_AWS_KNOWLEDGE_BASE_BUCKET environment variable.',
-    );
-  }
+  // Storage is always available via the storage module
+  // This function is kept for backward compatibility
 }
 
 /**
- * Uploads a document to S3
+ * Uploads a document to storage
  */
 export async function uploadToS3(
   organizationId: string,
@@ -47,10 +38,8 @@ export async function uploadToS3(
   fileType: string,
   fileData: string,
 ): Promise<UploadResult> {
-  validateS3Config();
-
   // Convert base64 to buffer
-  const fileBuffer = Buffer.from(fileData, 'base64');
+  const fileBuffer = base64ToBuffer(fileData);
 
   // Validate file size
   if (fileBuffer.length > MAX_FILE_SIZE_BYTES) {
@@ -62,21 +51,16 @@ export async function uploadToS3(
   // Generate unique file key
   const fileId = randomBytes(16).toString('hex');
   const sanitized = sanitizeFileName(fileName);
-  const s3Key = generateS3Key(organizationId, fileId, sanitized);
+  const s3Key = `${STORAGE_BUCKETS.KNOWLEDGE_BASE}/${generateS3Key(organizationId, fileId, sanitized)}`;
 
-  // Upload to S3
-  const putCommand = new PutObjectCommand({
-    Bucket: APP_AWS_KNOWLEDGE_BASE_BUCKET!,
-    Key: s3Key,
-    Body: fileBuffer,
-    ContentType: fileType,
-    Metadata: {
+  // Upload to storage
+  await storage.upload(s3Key, fileBuffer, {
+    contentType: fileType,
+    metadata: {
       originalFileName: sanitizeMetadataFileName(fileName),
       organizationId,
     },
   });
-
-  await s3Client!.send(putCommand);
 
   return {
     s3Key,
@@ -91,16 +75,10 @@ export async function generateDownloadUrl(
   s3Key: string,
   fileName: string,
 ): Promise<SignedUrlResult> {
-  validateS3Config();
-
-  const command = new GetObjectCommand({
-    Bucket: APP_AWS_KNOWLEDGE_BASE_BUCKET!,
-    Key: s3Key,
-    ResponseContentDisposition: `attachment; filename="${encodeURIComponent(fileName)}"`,
-  });
-
-  const signedUrl = await getSignedUrl(s3Client!, command, {
+  const signedUrl = await storage.getUrl(s3Key, {
     expiresIn: SIGNED_URL_EXPIRATION_SECONDS,
+    download: true,
+    filename: encodeURIComponent(fileName),
   });
 
   return { signedUrl };
@@ -114,36 +92,23 @@ export async function generateViewUrl(
   fileName: string,
   fileType: string,
 ): Promise<SignedUrlResult> {
-  validateS3Config();
-
-  const command = new GetObjectCommand({
-    Bucket: APP_AWS_KNOWLEDGE_BASE_BUCKET!,
-    Key: s3Key,
-    ResponseContentDisposition: `inline; filename="${encodeURIComponent(fileName)}"`,
-    ResponseContentType: fileType || 'application/octet-stream',
-  });
-
-  const signedUrl = await getSignedUrl(s3Client!, command, {
+  const signedUrl = await storage.getUrl(s3Key, {
     expiresIn: SIGNED_URL_EXPIRATION_SECONDS,
+    download: false,
+    filename: encodeURIComponent(fileName),
+    contentType: fileType || 'application/octet-stream',
   });
 
   return { signedUrl };
 }
 
 /**
- * Deletes a document from S3
+ * Deletes a document from storage
  * Returns true if successful, false if error (non-throwing)
  */
 export async function deleteFromS3(s3Key: string): Promise<boolean> {
   try {
-    validateS3Config();
-
-    const deleteCommand = new DeleteObjectCommand({
-      Bucket: APP_AWS_KNOWLEDGE_BASE_BUCKET!,
-      Key: s3Key,
-    });
-
-    await s3Client!.send(deleteCommand);
+    await storage.delete(s3Key);
     return true;
   } catch {
     return false;

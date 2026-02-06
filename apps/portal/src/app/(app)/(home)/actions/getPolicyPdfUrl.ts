@@ -1,9 +1,7 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { BUCKET_NAME, s3Client } from '@/utils/s3';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { storage, STORAGE_BUCKETS } from '@/utils/storage';
 import { db } from '@db';
 import { z } from 'zod';
 
@@ -76,11 +74,8 @@ export const getPolicyPdfUrl = authActionClient
         return { success: false, error: 'No PDF found for this policy.' };
       }
 
-      const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: pdfUrl,
-      });
-      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 });
+      const pathname = `${STORAGE_BUCKETS.ATTACHMENTS}/${pdfUrl}`;
+      const signedUrl = await storage.getUrl(pathname, { expiresIn: 900 });
 
       return { success: true, data: signedUrl };
     } catch (error) {

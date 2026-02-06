@@ -1,5 +1,4 @@
-import { extractS3KeyFromUrl } from '@/app/s3';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { extractPathnameFromUrl, storage, STORAGE_BUCKETS } from '@/app/storage';
 import { db } from '@db';
 import { logger, task } from '@trigger.dev/sdk';
 
@@ -107,30 +106,7 @@ async function extractContentFromUrl(url: string): Promise<string> {
 }
 
 /**
- * Creates an S3 client instance for Trigger.dev tasks
- */
-function createS3Client(): S3Client {
-  const region = process.env.APP_AWS_REGION || 'us-east-1';
-  const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error(
-      'AWS S3 credentials are missing. Please set APP_AWS_ACCESS_KEY_ID and APP_AWS_SECRET_ACCESS_KEY environment variables in Trigger.dev.',
-    );
-  }
-
-  return new S3Client({
-    region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-  });
-}
-
-/**
- * Extracts content from an attachment stored in S3
+ * Extracts content from an attachment stored in storage
  */
 async function extractContentFromAttachment(
   attachmentId: string,
@@ -147,35 +123,19 @@ async function extractContentFromAttachment(
     throw new Error('Attachment not found');
   }
 
-  const bucketName = process.env.APP_AWS_BUCKET_NAME;
-  if (!bucketName) {
-    throw new Error(
-      'APP_AWS_BUCKET_NAME environment variable is not set in Trigger.dev.',
-    );
+  const pathname = extractPathnameFromUrl(attachment.url);
+  const buffer = await storage.download(pathname);
+
+  if (!buffer) {
+    throw new Error('Failed to retrieve attachment from storage');
   }
 
-  const key = extractS3KeyFromUrl(attachment.url);
-  const s3Client = createS3Client();
-  const getCommand = new GetObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-  });
-
-  const response = await s3Client.send(getCommand);
-
-  if (!response.Body) {
-    throw new Error('Failed to retrieve attachment from S3');
-  }
-
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk);
-  }
-  const buffer = Buffer.concat(chunks);
   const base64Data = buffer.toString('base64');
 
+  // Get file metadata to determine content type
+  const headResult = await storage.head(pathname);
   const fileType =
-    response.ContentType ||
+    headResult?.contentType ||
     (attachment.type === 'image' ? 'image/png' : 'application/pdf');
 
   const content = await extractContentFromFile(
@@ -188,42 +148,25 @@ async function extractContentFromAttachment(
 }
 
 /**
- * Extracts content from an S3 key (for temporary questionnaire files)
+ * Extracts content from a storage key (for temporary questionnaire files)
  */
 async function extractContentFromS3Key(
   s3Key: string,
   fileType: string,
 ): Promise<{ content: string; fileType: string }> {
-  const questionnaireBucket = process.env.APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET;
+  const pathname = `${STORAGE_BUCKETS.QUESTIONNAIRES}/${s3Key}`;
+  const buffer = await storage.download(pathname);
 
-  if (!questionnaireBucket) {
-    throw new Error(
-      'Questionnaire upload bucket is not configured. Please set APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET environment variable in Trigger.dev.',
-    );
+  if (!buffer) {
+    throw new Error('Failed to retrieve file from storage');
   }
 
-  const s3Client = createS3Client();
-
-  const getCommand = new GetObjectCommand({
-    Bucket: questionnaireBucket,
-    Key: s3Key,
-  });
-
-  const response = await s3Client.send(getCommand);
-
-  if (!response.Body) {
-    throw new Error('Failed to retrieve file from S3');
-  }
-
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk);
-  }
-  const buffer = Buffer.concat(chunks);
   const base64Data = buffer.toString('base64');
 
+  // Get file metadata to determine content type
+  const headResult = await storage.head(pathname);
   const detectedFileType =
-    response.ContentType || fileType || 'application/octet-stream';
+    headResult?.contentType || fileType || 'application/octet-stream';
 
   const content = await extractContentFromFile(
     base64Data,

@@ -1,8 +1,7 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { BUCKET_NAME, s3Client } from '@/app/s3';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { db, PolicyDisplayFormat } from '@db';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -34,8 +33,8 @@ export const deletePolicyPdfAction = authActionClient
       // Verify policy belongs to organization
       const policy = await db.policy.findUnique({
         where: { id: policyId, organizationId },
-        select: { 
-          id: true, 
+        select: {
+          id: true,
           pdfUrl: true,
           currentVersionId: true,
           pendingVersionId: true,
@@ -87,16 +86,12 @@ export const deletePolicyPdfAction = authActionClient
         });
       }
 
-      // Delete from S3 after database is updated
-      if (oldPdfUrl && s3Client && BUCKET_NAME) {
+      // Delete from storage after database is updated
+      if (oldPdfUrl) {
         try {
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: oldPdfUrl,
-          });
-          await s3Client.send(deleteCommand);
+          await storage.delete(`${STORAGE_BUCKETS.ATTACHMENTS}/${oldPdfUrl}`);
         } catch (error) {
-          console.error('Error deleting PDF from S3 (orphaned file):', error);
+          console.error('Error deleting PDF from storage (orphaned file):', error);
         }
       }
 

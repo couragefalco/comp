@@ -1,7 +1,6 @@
 'use server';
 
-import { BUCKET_NAME, s3Client } from '@/app/s3';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { storage, STORAGE_BUCKETS } from '@/app/storage';
 import { db } from '@db';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { z } from 'zod';
@@ -53,33 +52,24 @@ export const deletePolicyAction = authActionClient
         };
       }
 
-      // Clean up S3 files before cascade delete
-      if (s3Client && BUCKET_NAME) {
-        const pdfUrlsToDelete: string[] = [];
+      // Clean up storage files before cascade delete
+      const pdfUrlsToDelete: string[] = [];
 
-        // Add policy-level PDF if exists
-        if (policy.pdfUrl) {
-          pdfUrlsToDelete.push(policy.pdfUrl);
+      // Add policy-level PDF if exists
+      if (policy.pdfUrl) {
+        pdfUrlsToDelete.push(`${STORAGE_BUCKETS.ATTACHMENTS}/${policy.pdfUrl}`);
+      }
+
+      // Add all version PDFs
+      for (const version of policy.versions) {
+        if (version.pdfUrl) {
+          pdfUrlsToDelete.push(`${STORAGE_BUCKETS.ATTACHMENTS}/${version.pdfUrl}`);
         }
+      }
 
-        // Add all version PDFs
-        for (const version of policy.versions) {
-          if (version.pdfUrl) {
-            pdfUrlsToDelete.push(version.pdfUrl);
-          }
-        }
-
-        // Delete all PDFs from S3
-        await Promise.allSettled(
-          pdfUrlsToDelete.map((pdfUrl) =>
-            s3Client.send(
-              new DeleteObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: pdfUrl,
-              }),
-            ),
-          ),
-        );
+      // Delete all PDFs from storage
+      if (pdfUrlsToDelete.length > 0) {
+        await storage.deleteMany(pdfUrlsToDelete);
       }
 
       // Delete the policy (versions are cascade deleted)

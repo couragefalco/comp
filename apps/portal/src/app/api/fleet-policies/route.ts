@@ -4,9 +4,7 @@ import { db } from "@db";
 import { validateMemberAndOrg } from "../download-agent/utils";
 import { getFleetInstance } from "@/utils/fleet";
 import { FleetPolicy, Host } from "@/app/(app)/(home)/[orgId]/types";
-import { APP_AWS_ORG_ASSETS_BUCKET, s3Client } from "@/utils/s3";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { storage, STORAGE_BUCKETS } from "@/utils/storage";
 
 const MDM_POLICY_ID = -9999;
 
@@ -78,21 +76,15 @@ export async function GET(req: NextRequest) {
       results.map(async (result) => {
         const signedAttachments = await Promise.all(
           (result.attachments ?? []).map(async (key) => {
-            if (!s3Client || !APP_AWS_ORG_ASSETS_BUCKET) {
-              return key;
-            }
             try {
-              const command = new GetObjectCommand({
-                Bucket: APP_AWS_ORG_ASSETS_BUCKET,
-                Key: key,
-              });
-              return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+              const pathname = `${STORAGE_BUCKETS.ORG_ASSETS}/${key}`;
+              return await storage.getUrl(pathname, { expiresIn: 3600 });
             } catch {
               return key;
             }
           }),
         );
-  
+
         return {
           ...result,
           attachments: signedAttachments,

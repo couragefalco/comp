@@ -1,10 +1,3 @@
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AttachmentEntityType, AttachmentType } from '@db';
 import {
   BadRequestException,
@@ -15,34 +8,24 @@ import { db } from '@trycompai/db';
 import { randomBytes } from 'crypto';
 import { AttachmentResponseDto } from './dto/task-responses.dto';
 import { UploadAttachmentDto } from './dto/upload-attachment.dto';
-import { s3Client } from '@/app/s3';
+import {
+  storage,
+  STORAGE_BUCKETS,
+  base64ToBuffer,
+} from '../app/storage';
 
 @Injectable()
 export class AttachmentsService {
-  private s3Client: S3Client;
-  private bucketName: string;
+  private bucketPrefix: string;
   private readonly MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
   private readonly SIGNED_URL_EXPIRY = 900; // 15 minutes
 
   constructor() {
-    // AWS configuration is validated at startup via ConfigModule
-    // Safe to access environment variables directly since they're validated
-    this.bucketName = process.env.APP_AWS_BUCKET_NAME!;
-
-    if (!s3Client) {
-      console.error(
-        'S3 Client is not initialized. Check AWS S3 configuration.',
-      );
-      throw new Error(
-        'S3 Client is not initialized. Check AWS S3 configuration.',
-      );
-    }
-
-    this.s3Client = s3Client;
+    this.bucketPrefix = STORAGE_BUCKETS.ATTACHMENTS;
   }
 
   /**
-   * Upload attachment to S3 and create database record
+   * Upload attachment to storage and create database record
    */
   async uploadAttachment(
     organizationId: string,
@@ -116,7 +99,7 @@ export class AttachmentsService {
       }
 
       // Validate file size
-      const fileBuffer = Buffer.from(uploadDto.fileData, 'base64');
+      const fileBuffer = base64ToBuffer(uploadDto.fileData);
       if (fileBuffer.length > this.MAX_FILE_SIZE_BYTES) {
         throw new BadRequestException(
           `File size exceeds maximum allowed size of ${this.MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB`,
@@ -127,15 +110,12 @@ export class AttachmentsService {
       const fileId = randomBytes(16).toString('hex');
       const sanitizedFileName = this.sanitizeFileName(uploadDto.fileName);
       const timestamp = Date.now();
-      const s3Key = `${organizationId}/attachments/${entityType}/${entityId}/${timestamp}-${fileId}-${sanitizedFileName}`;
+      const storageKey = `${this.bucketPrefix}/${organizationId}/${entityType}/${entityId}/${timestamp}-${fileId}-${sanitizedFileName}`;
 
-      // Upload to S3
-      const putCommand = new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: s3Key,
-        Body: fileBuffer,
-        ContentType: uploadDto.fileType,
-        Metadata: {
+      // Upload to storage
+      await storage.upload(storageKey, fileBuffer, {
+        contentType: uploadDto.fileType,
+        metadata: {
           originalFileName: uploadDto.fileName,
           organizationId,
           entityId,
@@ -144,13 +124,11 @@ export class AttachmentsService {
         },
       });
 
-      await this.s3Client.send(putCommand);
-
       // Create database record
       const attachment = await db.attachment.create({
         data: {
           name: uploadDto.fileName,
-          url: s3Key,
+          url: storageKey,
           type: this.mapFileTypeToAttachmentType(uploadDto.fileType),
           entityId,
           entityType,
@@ -159,7 +137,7 @@ export class AttachmentsService {
       });
 
       // Generate signed URL for immediate access
-      const downloadUrl = await this.generateSignedUrl(s3Key);
+      const downloadUrl = await this.generateSignedUrl(storageKey);
 
       return {
         id: attachment.id,
@@ -251,7 +229,7 @@ export class AttachmentsService {
   }
 
   /**
-   * Delete attachment from S3 and database
+   * Delete attachment from storage and database
    */
   async deleteAttachment(
     organizationId: string,
@@ -270,13 +248,8 @@ export class AttachmentsService {
         throw new BadRequestException('Attachment not found');
       }
 
-      // Delete from S3
-      const deleteCommand = new DeleteObjectCommand({
-        Bucket: this.bucketName,
-        Key: attachment.url,
-      });
-
-      await this.s3Client.send(deleteCommand);
+      // Delete from storage
+      await storage.delete(attachment.url);
 
       // Delete from database
       await db.attachment.delete({
@@ -297,19 +270,14 @@ export class AttachmentsService {
   /**
    * Generate signed URL for file download
    */
-  private async generateSignedUrl(s3Key: string): Promise<string> {
-    const getCommand = new GetObjectCommand({
-      Bucket: this.bucketName,
-      Key: s3Key,
-    });
-
-    return getSignedUrl(this.s3Client, getCommand, {
+  private async generateSignedUrl(storageKey: string): Promise<string> {
+    return storage.getUrl(storageKey, {
       expiresIn: this.SIGNED_URL_EXPIRY,
     });
   }
 
   /**
-   * Sanitize filename for S3 storage
+   * Sanitize filename for storage
    */
   private sanitizeFileName(fileName: string): string {
     return fileName.replace(/[^a-zA-Z0-9.-]/g, '_');

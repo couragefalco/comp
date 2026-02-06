@@ -1,5 +1,5 @@
 import { logger } from '@/utils/logger';
-import { getFleetAgent } from '@/utils/s3';
+import { getFleetAgent } from '@/utils/storage';
 import archiver from 'archiver';
 import { exec } from 'node:child_process';
 import { promises as fs } from 'node:fs';
