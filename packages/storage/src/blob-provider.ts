@@ -34,7 +34,7 @@ export class VercelBlobProvider implements StorageProvider {
     options?: UploadOptions
   ): Promise<UploadResult> {
     const result: PutBlobResult = await put(pathname, data, {
-      access: options?.access || 'public',
+      access: 'public', // Vercel Blob only supports public access
       token: this.token,
       contentType: options?.contentType,
       cacheControlMaxAge: options?.cacheControl
@@ -47,7 +47,7 @@ export class VercelBlobProvider implements StorageProvider {
       url: result.url,
       pathname: result.pathname,
       contentType: result.contentType,
-      size: result.size || 0,
+      size: 0, // Vercel Blob doesn't return size on upload
     };
   }
 
@@ -195,7 +195,7 @@ export class VercelBlobProvider implements StorageProvider {
    */
   private parseCacheControl(cacheControl: string): number {
     const match = cacheControl.match(/max-age=(\d+)/);
-    if (match) {
+    if (match && match[1]) {
       return parseInt(match[1], 10);
     }
     // Default to 1 year for immutable

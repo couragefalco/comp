@@ -170,7 +170,7 @@ export function getContentTypeFromFilename(filename: string): string {
  */
 export function base64ToBuffer(base64: string): Buffer {
   // Handle data URLs (e.g., "data:image/png;base64,...")
-  const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
+  const base64Data = base64.includes(',') ? base64.split(',')[1] ?? base64 : base64;
   return Buffer.from(base64Data, 'base64');
 }
 
@@ -196,7 +196,7 @@ export function parseOrgPath(pathname: string): { orgId: string; path: string } 
   const cleanPath = pathname.startsWith('/') ? pathname.substring(1) : pathname;
   const parts = cleanPath.split('/');
 
-  if (parts.length < 2) {
+  if (parts.length < 2 || !parts[0]) {
     return null;
   }
 

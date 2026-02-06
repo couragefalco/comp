@@ -5,7 +5,7 @@ import { prismaExtension } from './customPrismaExtension';
 import { integrationPlatformExtension } from './integrationPlatformExtension';
 
 export default defineConfig({
-  project: 'proj_zhioyrusqertqgafqgpj', // API project
+  project: 'proj_jnnsiogpkvowpmlqtbvp',
   logLevel: 'log',
   instrumentations: [new PrismaInstrumentation()],
   maxDuration: 300, // 5 minutes
