@@ -40,7 +40,7 @@ export async function createAgentArchive({
     const agentPackage = await getFleetAgent({ os });
     const packageFilename = getPackageFilename(os);
 
-    archive.append(agentPackage as Readable, {
+    archive.append(agentPackage as unknown as Readable, {
       name: packageFilename,
       store: true,
     });
