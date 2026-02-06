@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { VercelBlobProvider } from './blob-provider';
 import type { StorageProvider } from './types';
 
