@@ -28,11 +28,13 @@ export default async function SetupWithIdPage({ params, searchParams }: SetupPag
   }
 
   // Verify the setup session exists and belongs to this user
-  const setupSession = await getSetupSession(setupId);
+  let setupSession = await getSetupSession(setupId);
 
   if (!setupSession || setupSession.userId !== user.id) {
-    // Invalid or expired session, redirect to regular setup
-    return redirect('/setup');
+    // KV session missing (e.g. in-memory mock lost state) – create a fresh one
+    // instead of redirecting back to /setup which causes a redirect loop.
+    const { createSetupSession } = await import('../lib/setup-session');
+    setupSession = await createSetupSession(user.id);
   }
 
   // If there's an inviteCode in the URL, redirect to the new invitation route
