@@ -1,0 +1,20 @@
+# Caddyfile for Hetzner deployment
+# Mounted into the Caddy container at /etc/caddy/Caddyfile
+# All domains receive automatic SSL via Let's Encrypt
+
+company.ultrarelevant.com {
+	root * /srv/hub
+	file_server
+}
+
+compliance.ultrarelevant.com {
+	reverse_proxy comp-app:3000
+}
+
+portal.ultrarelevant.com {
+	reverse_proxy comp-portal:3000
+}
+
+crm.ultrarelevant.com {
+	reverse_proxy twenty-server-1:3000
+}
