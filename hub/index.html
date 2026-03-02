@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company Hub - Ultrarelevant</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+      background-color: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      text-align: center;
+      padding: 4rem 1.5rem 2rem;
+      max-width: 600px;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: #fafafa;
+      letter-spacing: -0.025em;
+    }
+
+    header p {
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+      color: #737373;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      width: 100%;
+      max-width: 960px;
+      padding: 1rem 1.5rem 4rem;
+    }
+
+    .card {
+      display: block;
+      background-color: #141414;
+      border: 1px solid #262626;
+      border-radius: 10px;
+      padding: 1.5rem;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.2s ease, background-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: #404040;
+      background-color: #1a1a1a;
+    }
+
+    .card h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fafafa;
+      margin-bottom: 0.4rem;
+    }
+
+    .card p {
+      font-size: 0.875rem;
+      color: #737373;
+      line-height: 1.5;
+    }
+
+    .card .arrow {
+      display: block;
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: #525252;
+      transition: color 0.2s ease;
+    }
+
+    .card:hover .arrow {
+      color: #a3a3a3;
+    }
+
+    @media (max-width: 640px) {
+      header {
+        padding: 3rem 1.5rem 1.5rem;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Company Hub</h1>
+    <p>Internal tools &amp; services</p>
+  </header>
+
+  <div class="grid">
+    <a class="card" href="https://compliance.ultrarelevant.com">
+      <h2>Compliance</h2>
+      <p>SOC 2, ISO 27001, HIPAA compliance platform</p>
+      <span class="arrow">compliance.ultrarelevant.com &rarr;</span>
+    </a>
+
+    <a class="card" href="https://portal.ultrarelevant.com">
+      <h2>Portal</h2>
+      <p>Employee compliance portal</p>
+      <span class="arrow">portal.ultrarelevant.com &rarr;</span>
+    </a>
+
+    <a class="card" href="https://crm.ultrarelevant.com">
+      <h2>CRM</h2>
+      <p>Customer relationship management</p>
+      <span class="arrow">crm.ultrarelevant.com &rarr;</span>
+    </a>
+  </div>
+</body>
+</html>
