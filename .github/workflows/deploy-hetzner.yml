@@ -65,10 +65,9 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd /opt/comp
-            # Login to GHCR
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            # Pull latest images
+            # Pull latest images (public repo, no auth needed)
             docker compose -f docker-compose.prod.yml pull comp-app comp-portal
+            docker pull ghcr.io/couragefalco/comp/migrator:latest
             # Run migrations
             docker run --rm --network comp-internal \
               -e DATABASE_URL=postgresql://comp:${{ secrets.COMP_DB_PASSWORD }}@comp-db:5432/comp \
