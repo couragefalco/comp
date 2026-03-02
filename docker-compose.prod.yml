@@ -27,6 +27,8 @@ services:
   comp-app:
     image: ghcr.io/couragefalco/comp/app:latest
     env_file: .env.app
+    ports:
+      - '3100:3000'
     depends_on:
       comp-db:
         condition: service_healthy
@@ -37,13 +39,14 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      - caddy-net
       - comp-internal
     logging: *default-logging
 
   comp-portal:
     image: ghcr.io/couragefalco/comp/portal:latest
     env_file: .env.portal
+    ports:
+      - '3200:3000'
     depends_on:
       comp-db:
         condition: service_healthy
@@ -54,33 +57,12 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      - caddy-net
       - comp-internal
     logging: *default-logging
 
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - ./hub:/srv/hub
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-    networks:
-      - caddy-net
-    logging: *default-logging
-
 networks:
-  caddy-net:
-    name: caddy-net
-    driver: bridge
   comp-internal:
+    name: comp-internal
 
 volumes:
-  caddy_data:
-  caddy_config:
   comp_db_data:

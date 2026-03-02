@@ -17,6 +17,7 @@ COPY packages/integrations/package.json ./packages/integrations/
 COPY packages/utils/package.json ./packages/utils/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/analytics/package.json ./packages/analytics/
+COPY packages/storage/package.json ./packages/storage/
 
 # Copy app package.json files
 COPY apps/app/package.json ./apps/app/
@@ -63,7 +64,8 @@ COPY apps/app ./apps/app
 # Bring in node_modules for build and prisma prebuild
 COPY --from=deps /app/node_modules ./node_modules
 
-# Pre-combine schemas for app build
+# Build workspace packages needed by the app
+RUN cd packages/storage && bun run build
 RUN cd packages/db && node scripts/combine-schemas.js
 RUN cp packages/db/dist/schema.prisma apps/app/prisma/schema.prisma
 
@@ -124,7 +126,8 @@ COPY apps/portal ./apps/portal
 # Bring in node_modules for build and prisma prebuild
 COPY --from=deps /app/node_modules ./node_modules
 
-# Pre-combine schemas for portal build
+# Build workspace packages needed by the portal
+RUN cd packages/storage && bun run build
 RUN cd packages/db && node scripts/combine-schemas.js
 RUN cp packages/db/dist/schema.prisma apps/portal/prisma/schema.prisma
 

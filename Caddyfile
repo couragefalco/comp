@@ -1,20 +1,29 @@
-# Caddyfile for Hetzner deployment
-# Mounted into the Caddy container at /etc/caddy/Caddyfile
+# System Caddyfile for Hetzner VPS
+# Managed by: /etc/caddy/Caddyfile on 46.225.221.111
 # All domains receive automatic SSL via Let's Encrypt
 
 company.ultrarelevant.com {
-	root * /srv/hub
+	root * /opt/comp/hub
 	file_server
+	tls acc@heyfalco.com
 }
 
 compliance.ultrarelevant.com {
-	reverse_proxy comp-app:3000
+	reverse_proxy localhost:3100
+	tls acc@heyfalco.com
 }
 
 portal.ultrarelevant.com {
-	reverse_proxy comp-portal:3000
+	reverse_proxy localhost:3200
+	tls acc@heyfalco.com
 }
 
 crm.ultrarelevant.com {
-	reverse_proxy twenty-server-1:3000
+	reverse_proxy localhost:3000
+	tls acc@heyfalco.com
+}
+
+claw.ultrarelevant.com {
+	reverse_proxy localhost:18789
+	tls acc@heyfalco.com
 }
