@@ -1,0 +1,86 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+    compress: 'true'
+
+services:
+  comp-db:
+    image: postgres:16
+    volumes:
+      - comp_db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: comp
+      POSTGRES_USER: comp
+      POSTGRES_PASSWORD: ${COMP_DB_PASSWORD}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U comp -h localhost -d comp']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+    networks:
+      - comp-internal
+    logging: *default-logging
+
+  comp-app:
+    image: ghcr.io/couragefalco/comp/app:latest
+    env_file: .env.app
+    depends_on:
+      comp-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3000/api/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - caddy-net
+      - comp-internal
+    logging: *default-logging
+
+  comp-portal:
+    image: ghcr.io/couragefalco/comp/portal:latest
+    env_file: .env.portal
+    depends_on:
+      comp-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3000/ || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - caddy-net
+      - comp-internal
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./hub:/srv/hub
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks:
+      - caddy-net
+    logging: *default-logging
+
+networks:
+  caddy-net:
+    name: caddy-net
+    driver: bridge
+  comp-internal:
+
+volumes:
+  caddy_data:
+  caddy_config:
+  comp_db_data:
