@@ -24,6 +24,9 @@ crm.ultrarelevant.com {
 }
 
 claw.ultrarelevant.com {
+	basic_auth {
+		admin $2a$14$pJmZpXHULxHZtZHsrRcKLONnC5Z51ZJkxQJS0m9UDupOHAqmXjKaW
+	}
 	reverse_proxy localhost:18789
 	tls acc@heyfalco.com
 }

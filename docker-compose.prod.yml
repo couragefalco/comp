@@ -28,7 +28,7 @@ services:
     image: ghcr.io/couragefalco/comp/app:latest
     env_file: .env.app
     ports:
-      - '3100:3000'
+      - '127.0.0.1:3100:3000'
     depends_on:
       comp-db:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
     image: ghcr.io/couragefalco/comp/portal:latest
     env_file: .env.portal
     ports:
-      - '3200:3000'
+      - '127.0.0.1:3200:3000'
     depends_on:
       comp-db:
         condition: service_healthy
