@@ -402,11 +402,11 @@ model IntegrationPlatformCredential {
     /// Whether this credential is active
     isActive Boolean @default(true)
 
-    /// Who created this credential
-    createdById String?
+    /// Who created this credential (stored as user ID string, not a relation)
+    createdByUserId String?
 
-    /// Who last updated this credential
-    updatedById String?
+    /// Who last updated this credential (stored as user ID string, not a relation)
+    updatedByUserId String?
 
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt

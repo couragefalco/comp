@@ -50,8 +50,8 @@ export class PlatformCredentialRepository {
         encryptedClientId: data.encryptedClientId,
         encryptedClientSecret: data.encryptedClientSecret,
         customScopes: data.customScopes || [],
-        createdById: data.createdById,
-        updatedById: data.createdById,
+        createdByUserId: data.createdById,
+        updatedByUserId: data.createdById,
       },
     });
   }
@@ -70,7 +70,7 @@ export class PlatformCredentialRepository {
           customScopes: data.customScopes,
         }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
-        ...(data.updatedById && { updatedById: data.updatedById }),
+        ...(data.updatedById && { updatedByUserId: data.updatedById }),
       },
     });
   }
@@ -84,15 +84,15 @@ export class PlatformCredentialRepository {
         encryptedClientSecret: data.encryptedClientSecret,
         customScopes: data.customScopes || [],
         customSettings: data.customSettings,
-        createdById: data.createdById,
-        updatedById: data.createdById,
+        createdByUserId: data.createdById,
+        updatedByUserId: data.createdById,
       },
       update: {
         encryptedClientId: data.encryptedClientId,
         encryptedClientSecret: data.encryptedClientSecret,
         customScopes: data.customScopes || [],
         customSettings: data.customSettings,
-        updatedById: data.createdById,
+        updatedByUserId: data.createdById,
       },
     });
   }
